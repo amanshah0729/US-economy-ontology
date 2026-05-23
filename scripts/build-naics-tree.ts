@@ -27,6 +27,7 @@ type NaicsNode = {
   shareOfGdp: number | null;
   growthYoY: number | null;
   growth2yr: number | null;
+  aiGenerated: boolean;
   children: NaicsNode[];
 };
 
@@ -63,13 +64,26 @@ function parseDescriptions(): Map<string, string> {
     defval: "",
   }) as unknown as string[][];
 
-  const out = new Map<string, string>();
+  const raw = new Map<string, string>();
   for (const r of rows) {
     if (!r || r.length < 3) continue;
     const code = String(r[0] ?? "").trim();
     const desc = String(r[2] ?? "").trim();
     if (!/^(\d{2,6}|\d{2}-\d{2})$/.test(code) || !desc) continue;
-    out.set(code, desc);
+    raw.set(code, desc);
+  }
+
+  // Resolve "See industry description for XXXXXX." pointers.
+  // If the target isn't in the file, drop the pointer (inheritance from ancestors will fill it).
+  const out = new Map<string, string>();
+  for (const [code, desc] of raw) {
+    const m = desc.match(/See industry description for (\d{2,6})\./i);
+    if (m) {
+      if (raw.has(m[1])) out.set(code, raw.get(m[1])!);
+      // else: skip — leave unset
+    } else {
+      out.set(code, desc);
+    }
   }
   return out;
 }
@@ -115,6 +129,7 @@ function buildNaicsTree(): { root: NaicsNode; allNodes: Map<string, NaicsNode> }
     shareOfGdp: null,
     growthYoY: null,
     growth2yr: null,
+    aiGenerated: false,
     children: [],
   };
   const nodes = new Map<string, NaicsNode>();
@@ -132,6 +147,7 @@ function buildNaicsTree(): { root: NaicsNode; allNodes: Map<string, NaicsNode> }
       shareOfGdp: null,
       growthYoY: null,
       growth2yr: null,
+      aiGenerated: false,
       children: [],
     });
   }
@@ -143,6 +159,14 @@ function buildNaicsTree(): { root: NaicsNode; allNodes: Map<string, NaicsNode> }
     const parent = parentCode ? nodes.get(parentCode)! : root;
     parent.children.push(node);
   }
+
+  // Inherit description from nearest ancestor if a node has none.
+  const inherit = (node: NaicsNode, ancestorDesc: string) => {
+    const myDesc = node.description || ancestorDesc;
+    if (!node.description && ancestorDesc) node.description = ancestorDesc;
+    for (const c of node.children) inherit(c, myDesc);
+  };
+  inherit(root, root.description);
 
   return { root, allNodes: nodes };
 }

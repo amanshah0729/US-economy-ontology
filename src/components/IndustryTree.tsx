@@ -5,38 +5,42 @@ import { hierarchy, tree } from "d3-hierarchy";
 import { scaleSqrt } from "d3-scale";
 import { select } from "d3-selection";
 import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from "d3-zoom";
-import { naicsTree, type NaicsNode } from "@/lib/industry";
+import { naicsTree, type NaicsNode, type SearchResult } from "@/lib/industry";
 import { growthToColor, GRAY } from "@/lib/color";
 import { IndustryTooltip } from "./IndustryTooltip";
+import { SearchBar } from "./SearchBar";
 
-// Visible node = ROOT + all sectors (depth 1). Default expand to depth 1
-// so user sees ROOT → 20 sectors → 96 subsectors (depth 2 children rendered).
-const DEFAULT_EXPANDED_DEPTH = 1;
-
-const NODE_HSPACING = 22;     // px between leaves horizontally
-const NODE_VSPACING = 90;     // px between depth levels vertically
+const NODE_HSPACING = 60;     // px between leaves horizontally
+const NODE_VSPACING = 130;    // px between depth levels vertically
 const MIN_R = 4;
 const MAX_R = 26;
 const GRAY_R = 4;
 
 type Props = { className?: string };
 
-function defaultExpanded(root: NaicsNode): Set<string> {
+function expandAll(root: NaicsNode): Set<string> {
   const set = new Set<string>();
-  const walk = (n: NaicsNode, d: number) => {
-    if (d <= DEFAULT_EXPANDED_DEPTH && n.children.length > 0) {
+  const walk = (n: NaicsNode) => {
+    if (n.children.length > 0) {
       set.add(n.code);
-      for (const c of n.children) walk(c, d + 1);
+      for (const c of n.children) walk(c);
     }
   };
-  walk(root, 0);
+  walk(root);
   return set;
 }
 
+function collapseToSectors(root: NaicsNode): Set<string> {
+  // Only root expanded → visible: root + 20 sectors
+  return new Set([root.code]);
+}
+
 export function IndustryTree({ className }: Props) {
-  const [expanded, setExpanded] = useState<Set<string>>(() => defaultExpanded(naicsTree));
+  const [expanded, setExpanded] = useState<Set<string>>(() => collapseToSectors(naicsTree));
   const [hover, setHover] = useState<{ node: NaicsNode; x: number; y: number } | null>(null);
   const [transform, setTransform] = useState<ZoomTransform>(zoomIdentity);
+  const [highlightCode, setHighlightCode] = useState<string | null>(null);
+  const [pendingFocus, setPendingFocus] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -139,6 +143,42 @@ export function IndustryTree({ className }: Props) {
     applyTransform(zoomIdentity.translate(tx, ty).scale(k));
   };
 
+  // Focus a node from search: expand ancestors, then pan/zoom to it after layout recomputes.
+  const onSearchSelect = (r: SearchResult) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      // Expand every ancestor so the node is visible
+      for (const code of r.ancestors) next.add(code);
+      // Also expand the node itself if it has children, so the user sees adjacency
+      if (r.node.children.length > 0) next.add(r.node.code);
+      return next;
+    });
+    setPendingFocus(r.node.code);
+  };
+
+  // When layout updates and we have a pending focus, center on it.
+  useEffect(() => {
+    if (!pendingFocus) return;
+    if (size.w < 50) return;
+    const target = layout.descendants().find((d) => d.data.code === pendingFocus);
+    if (!target) return;
+
+    const k = Math.max(transform.k, 1.2);
+    const tx = size.w / 2 - target.x * k;
+    const ty = size.h / 2 - target.y * k;
+    applyTransform(zoomIdentity.translate(tx, ty).scale(k));
+    setHighlightCode(pendingFocus);
+    setPendingFocus(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingFocus, layout, size]);
+
+  // Clear highlight after a few seconds.
+  useEffect(() => {
+    if (!highlightCode) return;
+    const t = setTimeout(() => setHighlightCode(null), 3000);
+    return () => clearTimeout(t);
+  }, [highlightCode]);
+
   const toggle = (code: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -166,8 +206,9 @@ export function IndustryTree({ className }: Props) {
   return (
     <div ref={containerRef} className={className}>
       {/* HUD */}
-      <div className="absolute top-3 left-4 right-4 z-10 flex items-start justify-between pointer-events-none">
-        <div className="pointer-events-auto flex gap-2">
+      <div className="absolute top-3 left-4 right-4 z-10 flex items-start justify-between gap-3 pointer-events-none">
+        <div className="pointer-events-auto flex flex-wrap items-start gap-2">
+          <SearchBar onSelect={onSearchSelect} />
           <button
             type="button"
             onClick={resetView}
@@ -177,10 +218,17 @@ export function IndustryTree({ className }: Props) {
           </button>
           <button
             type="button"
-            onClick={() => setExpanded(defaultExpanded(naicsTree))}
+            onClick={() => setExpanded(expandAll(naicsTree))}
             className="rounded-md bg-zinc-900/80 px-3 py-1.5 text-xs text-zinc-200 backdrop-blur-sm border border-zinc-800 hover:bg-zinc-800"
           >
-            Collapse all
+            Expand all
+          </button>
+          <button
+            type="button"
+            onClick={() => setExpanded(collapseToSectors(naicsTree))}
+            className="rounded-md bg-zinc-900/80 px-3 py-1.5 text-xs text-zinc-200 backdrop-blur-sm border border-zinc-800 hover:bg-zinc-800"
+          >
+            Collapse to sectors
           </button>
           <div className="rounded-md bg-zinc-900/80 px-3 py-1.5 text-xs text-zinc-400 backdrop-blur-sm border border-zinc-800">
             {nodes.length} visible / 2,126 total · scroll to zoom · drag to pan
@@ -250,25 +298,51 @@ export function IndustryTree({ className }: Props) {
                   onMouseMove={(e) =>
                     setHover({ node, x: e.clientX, y: e.clientY })
                   }
+                  onMouseLeave={() => setHover(null)}
                 >
+                  {highlightCode === node.code && (
+                    <circle
+                      r={r + 8}
+                      fill="none"
+                      stroke="#facc15"
+                      strokeWidth={3}
+                      opacity={0.9}
+                    >
+                      <animate
+                        attributeName="r"
+                        from={r + 4}
+                        to={r + 14}
+                        dur="1.2s"
+                        repeatCount="indefinite"
+                      />
+                      <animate
+                        attributeName="opacity"
+                        from={0.9}
+                        to={0}
+                        dur="1.2s"
+                        repeatCount="indefinite"
+                      />
+                    </circle>
+                  )}
                   <circle
                     r={r}
                     fill={fill}
-                    stroke={isExpanded ? "#fafafa" : "#18181b"}
-                    strokeWidth={isExpanded ? 2 : 1}
+                    stroke={
+                      highlightCode === node.code
+                        ? "#facc15"
+                        : isExpanded
+                        ? "#fafafa"
+                        : "#18181b"
+                    }
+                    strokeWidth={highlightCode === node.code ? 2 : isExpanded ? 2 : 1}
+                    strokeDasharray={node.aiGenerated ? "2 2" : undefined}
                   />
-                  {/* Label for shallower / larger nodes (kept legible under zoom) */}
-                  {(node.depth <= 2 || r >= 10) && (
-                    <text
-                      y={-r - 4}
-                      textAnchor="middle"
-                      fontSize={node.depth === 0 ? 12 : 10}
-                      fill="#e4e4e7"
-                      style={{ pointerEvents: "none", userSelect: "none" }}
-                    >
-                      {truncate(displayLabel(node), node.depth === 0 ? 32 : 22)}
-                    </text>
-                  )}
+                  <NodeLabel
+                    text={displayLabel(node)}
+                    yOffset={node.code === "ROOT" ? -(r + 6) : r + 10}
+                    above={node.code === "ROOT"}
+                    fontSize={node.code === "ROOT" ? 12 : 8}
+                  />
                 </g>
               );
             })}
@@ -293,8 +367,70 @@ function displayLabel(node: NaicsNode): string {
   return node.title;
 }
 
-function truncate(s: string, max: number): string {
-  if (s.length <= max) return s;
-  return s.slice(0, max - 1) + "…";
+function wrapLabel(text: string, maxCharsPerLine = 14, maxLines = 3): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let cur = "";
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    const candidate = cur ? cur + " " + w : w;
+    if (candidate.length <= maxCharsPerLine) {
+      cur = candidate;
+    } else {
+      if (cur) lines.push(cur);
+      // Hard-truncate a single long word
+      if (w.length > maxCharsPerLine) {
+        cur = w.slice(0, maxCharsPerLine - 1) + "…";
+      } else {
+        cur = w;
+      }
+      if (lines.length >= maxLines) break;
+    }
+  }
+  if (cur && lines.length < maxLines) lines.push(cur);
+
+  // If words remain, append ellipsis to last line.
+  if (lines.length === maxLines) {
+    const joinedSoFar = lines.join(" ").split(/\s+/).length;
+    if (joinedSoFar < words.length) {
+      const last = lines[maxLines - 1];
+      lines[maxLines - 1] =
+        last.length <= maxCharsPerLine - 1 ? last + "…" : last.slice(0, maxCharsPerLine - 1) + "…";
+    }
+  }
+  return lines;
+}
+
+function NodeLabel({
+  text,
+  yOffset,
+  above,
+  fontSize,
+}: {
+  text: string;
+  yOffset: number;
+  above: boolean;
+  fontSize: number;
+}) {
+  const lines = wrapLabel(text);
+  return (
+    <text
+      y={yOffset}
+      textAnchor="middle"
+      fontSize={fontSize}
+      fill="#e4e4e7"
+      style={{ pointerEvents: "none", userSelect: "none" }}
+    >
+      {lines.map((line, i) => (
+        <tspan
+          key={i}
+          x={0}
+          dy={i === 0 ? (above ? -(lines.length - 1) * 1.1 + "em" : 0) : "1.1em"}
+        >
+          {line}
+        </tspan>
+      ))}
+    </text>
+  );
 }
 

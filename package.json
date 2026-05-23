@@ -7,9 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "build:data": "tsx scripts/build-naics-tree.ts"
+    "build:data": "tsx scripts/build-naics-tree.ts",
+    "ai-fill": "node --env-file=.env --import tsx scripts/ai-fill-naics.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.98.0",
     "d3-hierarchy": "^3.1.2",
     "d3-interpolate": "^3.0.1",
     "d3-scale": "^4.0.2",
