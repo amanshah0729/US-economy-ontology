@@ -1,5 +1,5 @@
 import { scaleLinear } from "d3-scale";
-import { interpolateRdYlGn } from "d3-scale-chromatic";
+import { interpolateRdYlGn, interpolateYlGnBu } from "d3-scale-chromatic";
 
 // Map a YoY real growth rate to a color on the RdYlGn scale.
 // Domain clamped at ±5% so the color contrast stays useful.
@@ -14,3 +14,17 @@ export function growthToColor(growth: number | null | undefined): string {
   if (growth == null || Number.isNaN(growth)) return GRAY;
   return interpolateRdYlGn(growthScale(growth));
 }
+
+// Mean annual wage → color. Light yellow-green at $30k → deep blue at $150k+.
+// Sqrt-style perceptual stretch so the meaty $40k–$80k range gets contrast.
+const wageScale = scaleLinear<number, number>()
+  .domain([30_000, 60_000, 100_000, 150_000])
+  .range([0.1, 0.35, 0.65, 0.95])
+  .clamp(true);
+
+export function wageToColor(wage: number | null | undefined): string {
+  if (wage == null || Number.isNaN(wage)) return GRAY;
+  return interpolateYlGnBu(wageScale(wage));
+}
+
+export const WAGE_LEGEND_STOPS = [30_000, 60_000, 100_000, 150_000] as const;

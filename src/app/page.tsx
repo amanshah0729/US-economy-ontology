@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { IndustryTree } from "@/components/IndustryTree";
+import { OccupationTree } from "@/components/OccupationTree";
 
 type Tab = "industry" | "occupation";
 
@@ -26,9 +27,7 @@ export default function Home() {
         {tab === "industry" ? (
           <IndustryTree className="relative h-full w-full" />
         ) : (
-          <div className="flex h-full items-center justify-center text-zinc-500">
-            Occupation map coming soon
-          </div>
+          <OccupationTree className="relative h-full w-full" />
         )}
       </div>
     </main>
