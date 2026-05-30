@@ -5,10 +5,19 @@ import { hierarchy, tree } from "d3-hierarchy";
 import { scaleSqrt } from "d3-scale";
 import { select } from "d3-selection";
 import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from "d3-zoom";
-import { naicsTree, type NaicsNode, type SearchResult } from "@/lib/industry";
+import {
+  naicsTree,
+  formatBillions,
+  formatPct,
+  formatSigned,
+  type NaicsNode,
+  type SearchResult,
+} from "@/lib/industry";
 import { growthToColor, GRAY } from "@/lib/color";
 import { IndustryTooltip } from "./IndustryTooltip";
 import { SearchBar } from "./SearchBar";
+import { AddNoteModal } from "@/components/notes/AddNoteModal";
+import { NotesByIndustryPanel } from "@/components/notes/NotesByIndustryPanel";
 
 const NODE_HSPACING = 60;     // px between leaves horizontally
 const NODE_VSPACING = 130;    // px between depth levels vertically
@@ -38,6 +47,11 @@ function collapseToSectors(root: NaicsNode): Set<string> {
 export function IndustryTree({ className }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(() => collapseToSectors(naicsTree));
   const [hover, setHover] = useState<{ node: NaicsNode; x: number; y: number } | null>(null);
+  // Node clicked to pin its interactive detail panel (top-right). Distinct from
+  // the cursor-following hover tooltip, which stays pointer-events-none.
+  const [pinned, setPinned] = useState<NaicsNode | null>(null);
+  // When set, the Add Note modal is open pre-linked to these NAICS codes.
+  const [addNoteCodes, setAddNoteCodes] = useState<string[] | null>(null);
   const [transform, setTransform] = useState<ZoomTransform>(zoomIdentity);
   const [highlightCode, setHighlightCode] = useState<string | null>(null);
   const [pendingFocus, setPendingFocus] = useState<string | null>(null);
@@ -290,6 +304,7 @@ export function IndustryTree({ className }: Props) {
                   style={{ cursor: hasKids ? "pointer" : "default" }}
                   onClick={(e) => {
                     e.stopPropagation();
+                    setPinned(node);
                     if (hasKids) toggle(node.code);
                   }}
                   onMouseEnter={(e) =>
@@ -350,12 +365,84 @@ export function IndustryTree({ className }: Props) {
         </g>
       </svg>
 
-      {hover && (
+      {/* Hover tooltip only when nothing is pinned, to avoid double panels. */}
+      {hover && !pinned && (
         <IndustryTooltip
           node={hover.node}
           x={hover.x}
           y={hover.y}
           expanded={expanded.has(hover.node.code)}
+        />
+      )}
+
+      {/* Pinned interactive detail panel (top-right). */}
+      {pinned && (
+        <div className="absolute right-4 top-20 bottom-4 z-20 flex w-80 flex-col rounded-lg border border-zinc-800 bg-zinc-900/95 shadow-xl backdrop-blur-sm">
+          <div className="flex items-start justify-between gap-2 border-b border-zinc-800 p-3">
+            <div className="min-w-0">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">
+                NAICS {pinned.code === "ROOT" ? "—" : pinned.code}
+              </div>
+              <div className="text-sm font-semibold text-zinc-100">
+                {pinned.code === "ROOT" ? "U.S. Economy" : pinned.title}
+              </div>
+            </div>
+            <button
+              onClick={() => setPinned(null)}
+              className="shrink-0 text-zinc-500 hover:text-white"
+              aria-label="Close panel"
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-3">
+            {pinned.hasValue ? (
+              <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
+                <span className="text-zinc-400">Value</span>
+                <span>{formatBillions(pinned.valueLatest)}</span>
+                <span className="text-zinc-400">% of GDP</span>
+                <span>{formatPct(pinned.shareOfGdp, 2)}</span>
+                <span className="text-zinc-400">YoY growth</span>
+                <span>{formatSigned(pinned.growthYoY)}</span>
+                <span className="text-zinc-400">2yr growth</span>
+                <span>{formatSigned(pinned.growth2yr)}</span>
+              </div>
+            ) : (
+              <p className="text-xs italic text-zinc-500">
+                No BEA data for this NAICS code.
+              </p>
+            )}
+
+            {pinned.code !== "ROOT" && (
+              <button
+                onClick={() => setAddNoteCodes([pinned.code])}
+                className="mt-3 w-full rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700"
+              >
+                + Add note for this industry
+              </button>
+            )}
+
+            <div className="mt-4">
+              <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                Linked notes
+              </h4>
+              {pinned.code !== "ROOT" ? (
+                <NotesByIndustryPanel code={pinned.code} />
+              ) : (
+                <p className="text-xs text-zinc-500">
+                  Select an industry to see its notes.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {addNoteCodes && (
+        <AddNoteModal
+          initialCodes={addNoteCodes}
+          onClose={() => setAddNoteCodes(null)}
         />
       )}
     </div>

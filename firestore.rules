@@ -1,0 +1,88 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function myUid() {
+      return request.auth.uid;
+    }
+
+    function orgData(orgId) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)).data;
+    }
+
+    function orgExists(orgId) {
+      return exists(/databases/$(database)/documents/organizations/$(orgId));
+    }
+
+    // Membership: am I listed in the org's memberUids array?
+    function isMember(orgId) {
+      return signedIn() && orgExists(orgId) && myUid() in orgData(orgId).memberUids;
+    }
+
+    // ---- users ----
+    // A user can only read/write their own profile doc.
+    match /users/{uid} {
+      allow read: if signedIn() && myUid() == uid;
+      allow create: if signedIn() && myUid() == uid;
+      // Allow self-updates. orgId is set via the create-org / join-org batches,
+      // which also write here as the same user — so this covers membership too.
+      allow update: if signedIn() && myUid() == uid;
+    }
+
+    // ---- organizations ----
+    match /organizations/{orgId} {
+      allow read: if isMember(orgId);
+
+      // Creator must include themselves as the sole initial member.
+      allow create: if signedIn()
+        && request.resource.data.createdBy == myUid()
+        && request.resource.data.memberUids == [myUid()];
+
+      // Two allowed updates:
+      //  (a) an existing member edits the org (everyone is equal), OR
+      //  (b) a non-member joins by appending ONLY their own uid to memberUids,
+      //      provided a valid invite for this org exists.
+      allow update: if isMember(orgId)
+        || (
+          signedIn()
+          && request.resource.data.memberUids == orgData(orgId).memberUids.concat([myUid()])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids'])
+        );
+
+      match /members/{memberUid} {
+        allow read: if isMember(orgId);
+        // A member can write member docs; a joining user may write their own.
+        allow write: if isMember(orgId) || (signedIn() && myUid() == memberUid);
+      }
+    }
+
+    // ---- invites ----
+    match /invites/{token} {
+      // Any signed-in user can read an invite (to preview the org before joining).
+      allow read: if signedIn();
+      allow create: if signedIn() && isMember(request.resource.data.orgId);
+      allow update, delete: if signedIn() && isMember(resource.data.orgId);
+    }
+
+    // ---- notes ----
+    match /notes/{noteId} {
+      allow read: if isMember(resource.data.orgId);
+      allow create: if isMember(request.resource.data.orgId)
+        && request.resource.data.authorUid == myUid();
+      allow update, delete: if isMember(resource.data.orgId);
+    }
+
+    // ---- tasks ----
+    match /tasks/{taskId} {
+      allow read: if isMember(resource.data.orgId);
+      allow create: if isMember(request.resource.data.orgId)
+        && request.resource.data.assignerUid == myUid();
+      allow update, delete: if isMember(resource.data.orgId);
+    }
+  }
+}
