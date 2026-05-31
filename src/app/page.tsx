@@ -8,7 +8,7 @@ import { TasksTab } from "@/components/tasks/TasksTab";
 import { AuthGate } from "@/components/auth/AuthGate";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useMyTaskCount } from "@/components/tasks/useMyTaskCount";
-import { InviteButton } from "@/components/org/InviteButton";
+import { OrgMenu } from "@/components/org/OrgMenu";
 
 type Tab = "industry" | "occupation" | "notes" | "tasks";
 
@@ -50,7 +50,7 @@ function AtlasApp() {
 
         <div className="ml-auto flex items-center gap-3 text-xs text-zinc-400">
           <span className="hidden sm:inline">{userDoc?.displayName}</span>
-          <InviteButton />
+          <OrgMenu />
           <button
             type="button"
             onClick={() => signOutUser()}

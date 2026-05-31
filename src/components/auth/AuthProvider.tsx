@@ -102,6 +102,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Reconcile membership: if the user has an orgId but is no longer a member
+  // (e.g. removed by another member), clear their own orgId so the gate falls
+  // back to onboarding. Each client can only clear its OWN orgId, so this is
+  // how a kicked user gets cleanly ejected.
+  const uid = user?.uid;
+  const orgId = userDoc?.orgId ?? null;
+  useEffect(() => {
+    if (!uid || !orgId) return;
+    const clearOrg = () => {
+      updateDoc(doc(db, "users", uid), { orgId: null }).catch(() => {});
+    };
+    return onSnapshot(
+      doc(db, "organizations", orgId),
+      (snap) => {
+        if (!snap.exists()) return;
+        const members = (snap.data().memberUids as string[]) ?? [];
+        if (!members.includes(uid)) clearOrg();
+      },
+      // Read denied → no longer a member → reconcile.
+      () => clearOrg(),
+    );
+  }, [uid, orgId]);
+
   const signInEmail = async (email: string, password: string) => {
     await signInWithEmailAndPassword(auth, email, password);
   };

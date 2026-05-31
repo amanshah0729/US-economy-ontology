@@ -1,7 +1,9 @@
 import {
   addDoc,
+  arrayRemove,
   arrayUnion,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   onSnapshot,
@@ -106,6 +108,35 @@ export async function joinOrgViaInvite(token: string, user: User): Promise<void>
   await batch.commit();
 }
 
+// Leave the current org: remove self from memberUids, delete the member
+// profile doc, and clear users/{uid}.orgId (which flips the gate back to
+// onboarding). Notes/tasks the user authored stay with the org.
+export async function leaveOrg(orgId: string, uid: string): Promise<void> {
+  const batch = writeBatch(db);
+  batch.update(doc(db, "organizations", orgId), {
+    memberUids: arrayRemove(uid),
+  });
+  batch.delete(doc(db, "organizations", orgId, "members", uid));
+  batch.update(doc(db, "users", uid), { orgId: null });
+  await batch.commit();
+}
+
+// Remove another member from the org (any member can do this). Removes them
+// from memberUids and deletes their member profile. We can't clear THEIR
+// users/{uid}.orgId (rules forbid cross-user writes) — their own client
+// reconciles membership in AuthProvider and falls back to onboarding.
+export async function kickMember(
+  orgId: string,
+  targetUid: string,
+): Promise<void> {
+  const batch = writeBatch(db);
+  batch.update(doc(db, "organizations", orgId), {
+    memberUids: arrayRemove(targetUid),
+  });
+  batch.delete(doc(db, "organizations", orgId, "members", targetUid));
+  await batch.commit();
+}
+
 export function subscribeOrg(
   orgId: string,
   cb: (org: Org | null) => void,
@@ -188,7 +219,6 @@ export async function updateNoteCodes(
 }
 
 export async function deleteNoteDoc(noteId: string): Promise<void> {
-  const { deleteDoc } = await import("firebase/firestore");
   await deleteDoc(doc(db, "notes", noteId));
 }
 
