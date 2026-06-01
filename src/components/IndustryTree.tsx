@@ -18,6 +18,9 @@ import { IndustryTooltip } from "./IndustryTooltip";
 import { SearchBar } from "./SearchBar";
 import { AddNoteModal } from "@/components/notes/AddNoteModal";
 import { NotesByIndustryPanel } from "@/components/notes/NotesByIndustryPanel";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { subscribeOrgNotes } from "@/lib/db";
+import type { Note } from "@/lib/types";
 
 const NODE_HSPACING = 60;     // px between leaves horizontally
 const NODE_VSPACING = 130;    // px between depth levels vertically
@@ -45,6 +48,31 @@ function collapseToSectors(root: NaicsNode): Set<string> {
 }
 
 export function IndustryTree({ className }: Props) {
+  const { orgId } = useAuth();
+  const [notes, setNotes] = useState<Note[]>([]);
+  useEffect(() => {
+    if (!orgId) {
+      setNotes([]);
+      return;
+    }
+    return subscribeOrgNotes(orgId, setNotes);
+  }, [orgId]);
+
+  // linkedCodes already includes every ancestor (see expandCodesWithAncestors),
+  // so the count per code naturally rolls up notes attached to descendants.
+  const noteCountByCode = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const n of notes) {
+      const seen = new Set<string>();
+      for (const c of n.linkedCodes ?? []) {
+        if (seen.has(c)) continue;
+        seen.add(c);
+        m.set(c, (m.get(c) ?? 0) + 1);
+      }
+    }
+    return m;
+  }, [notes]);
+
   const [expanded, setExpanded] = useState<Set<string>>(() => collapseToSectors(naicsTree));
   const [hover, setHover] = useState<{ node: NaicsNode; x: number; y: number } | null>(null);
   // Node clicked to pin its interactive detail panel (top-right). Distinct from
@@ -358,6 +386,45 @@ export function IndustryTree({ className }: Props) {
                     above={node.code === "ROOT"}
                     fontSize={node.code === "ROOT" ? 12 : 8}
                   />
+                  {(() => {
+                    const count =
+                      node.code === "ROOT"
+                        ? notes.length
+                        : noteCountByCode.get(node.code) ?? 0;
+                    if (count <= 0) return null;
+                    const label = count > 99 ? "99+" : String(count);
+                    const bw = Math.max(14, 8 + label.length * 5);
+                    const bh = 12;
+                    const cx = r * 0.7;
+                    const cy = -r * 0.7;
+                    return (
+                      <g style={{ pointerEvents: "none" }}>
+                        <rect
+                          x={cx - bw / 2}
+                          y={cy - bh / 2}
+                          width={bw}
+                          height={bh}
+                          rx={bh / 2}
+                          ry={bh / 2}
+                          fill="#2563eb"
+                          stroke="#0b1220"
+                          strokeWidth={1}
+                        />
+                        <text
+                          x={cx}
+                          y={cy + 0.5}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fontSize={9}
+                          fontWeight={700}
+                          fill="#ffffff"
+                          style={{ userSelect: "none" }}
+                        >
+                          {label}
+                        </text>
+                      </g>
+                    );
+                  })()}
                 </g>
               );
             })}
