@@ -49,6 +49,8 @@ export type Note = {
   position: string;
   contactDate: Timestamp;
   body: string;
+  // Follow-up / next steps captured during the call. Missing on older docs.
+  followUp?: string;
   // NAICS codes this note is linked to. Stores the selected code AND all its
   // ancestor codes, so a note tagged "541511" is also found under "5415"/"54".
   linkedCodes: string[];

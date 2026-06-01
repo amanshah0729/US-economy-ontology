@@ -163,6 +163,7 @@ export type NoteInput = {
   position: string;
   contactDate: Date;
   body: string;
+  followUp: string;
   codes: string[];
 };
 
@@ -179,6 +180,7 @@ export async function createNote(
     position: input.position,
     contactDate: Timestamp.fromDate(input.contactDate),
     body: input.body,
+    followUp: input.followUp,
     linkedCodes: expandCodesWithAncestors(input.codes),
     aiSorted: false,
     createdAt: serverTimestamp(),
@@ -197,6 +199,7 @@ export async function updateNote(
     position: input.position,
     contactDate: Timestamp.fromDate(input.contactDate),
     body: input.body,
+    followUp: input.followUp,
     linkedCodes: expandCodesWithAncestors(input.codes),
     updatedAt: serverTimestamp(),
   });

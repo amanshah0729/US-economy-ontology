@@ -30,6 +30,7 @@ export function NoteForm({ note, initialCodes, onDone, onCancel }: Props) {
     note ? toDateInputValue(note.contactDate.toDate()) : toDateInputValue(new Date()),
   );
   const [body, setBody] = useState(note?.body ?? "");
+  const [followUp, setFollowUp] = useState(note?.followUp ?? "");
   // Stored linkedCodes include ancestors; for editing we keep them all and let
   // the user prune. New notes start from initialCodes (e.g. the hovered node).
   const [codes, setCodes] = useState<string[]>(
@@ -79,6 +80,7 @@ export function NoteForm({ note, initialCodes, onDone, onCancel }: Props) {
       position,
       contactDate: new Date(date + "T00:00:00"),
       body,
+      followUp,
       codes,
     };
     try {
@@ -129,6 +131,18 @@ export function NoteForm({ note, initialCodes, onDone, onCancel }: Props) {
         value={body}
         onChange={(e) => setBody(e.target.value)}
       />
+
+      <div>
+        <label className="mb-1 block text-xs font-medium text-amber-300">
+          Next steps / follow-up
+        </label>
+        <textarea
+          className={field + " min-h-[70px] w-full resize-y"}
+          placeholder="What needs to happen next? (e.g. send pricing, intro to ops lead, check back in 2 weeks)"
+          value={followUp}
+          onChange={(e) => setFollowUp(e.target.value)}
+        />
+      </div>
 
       <div className="flex items-center justify-between">
         <label className="text-xs font-medium text-zinc-400">Industries</label>
