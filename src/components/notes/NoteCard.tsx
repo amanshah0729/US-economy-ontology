@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { nodeByCode } from "@/lib/industry";
 import { NoteDetailModal } from "@/components/notes/NoteDetailModal";
+import { NoteForm } from "@/components/notes/NoteForm";
+import { deleteNoteDoc } from "@/lib/db";
 import type { Note } from "@/lib/types";
 
 // Show only the most specific linked codes as chips (drop ancestors that are
@@ -22,26 +24,18 @@ function displayCodes(linkedCodes: string[]): string[] {
 
 export function NoteCard({
   note,
-  onEdit,
-  onDelete,
   compact,
 }: {
   note: Note;
-  onEdit?: () => void;
-  onDelete?: () => void;
   compact?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"closed" | "view" | "edit">("closed");
   const codes = displayCodes(note.linkedCodes);
 
-  function handleEdit() {
-    setOpen(false);
-    onEdit?.();
-  }
-
-  function handleDelete() {
-    setOpen(false);
-    onDelete?.();
+  async function handleDelete() {
+    if (!confirm("Delete this note?")) return;
+    await deleteNoteDoc(note.id);
+    setMode("closed");
   }
 
   return (
@@ -49,11 +43,11 @@ export function NoteCard({
       <div
         role="button"
         tabIndex={0}
-        onClick={() => setOpen(true)}
+        onClick={() => setMode("view")}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            setOpen(true);
+            setMode("view");
           }
         }}
         className="cursor-pointer rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-900/70 focus:border-blue-600 focus:outline-none"
@@ -76,29 +70,23 @@ export function NoteCard({
               )}
             </div>
           </div>
-          {(onEdit || onDelete) && (
-            <div
-              className="flex shrink-0 gap-1 text-xs"
-              onClick={(e) => e.stopPropagation()}
+          <div
+            className="flex shrink-0 gap-1 text-xs"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setMode("edit")}
+              className="rounded px-1.5 py-0.5 text-zinc-400 hover:bg-zinc-800 hover:text-white"
             >
-              {onEdit && (
-                <button
-                  onClick={onEdit}
-                  className="rounded px-1.5 py-0.5 text-zinc-400 hover:bg-zinc-800 hover:text-white"
-                >
-                  Edit
-                </button>
-              )}
-              {onDelete && (
-                <button
-                  onClick={onDelete}
-                  className="rounded px-1.5 py-0.5 text-zinc-400 hover:bg-zinc-800 hover:text-red-400"
-                >
-                  Delete
-                </button>
-              )}
-            </div>
-          )}
+              Edit
+            </button>
+            <button
+              onClick={handleDelete}
+              className="rounded px-1.5 py-0.5 text-zinc-400 hover:bg-zinc-800 hover:text-red-400"
+            >
+              Delete
+            </button>
+          </div>
         </div>
 
         {note.body && (
@@ -142,13 +130,41 @@ export function NoteCard({
         )}
       </div>
 
-      {open && (
+      {mode === "view" && (
         <NoteDetailModal
           note={note}
-          onClose={() => setOpen(false)}
-          onEdit={onEdit ? handleEdit : undefined}
-          onDelete={onDelete ? handleDelete : undefined}
+          onClose={() => setMode("closed")}
+          onEdit={() => setMode("edit")}
+          onDelete={handleDelete}
         />
+      )}
+
+      {mode === "edit" && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setMode("closed")}
+        >
+          <div
+            className="w-full max-w-lg rounded-xl border border-zinc-800 bg-zinc-900 p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-zinc-100">Edit note</h3>
+              <button
+                onClick={() => setMode("closed")}
+                className="text-zinc-500 hover:text-white"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <NoteForm
+              note={note}
+              onDone={() => setMode("closed")}
+              onCancel={() => setMode("closed")}
+            />
+          </div>
+        </div>
       )}
     </>
   );

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { deleteNoteDoc, subscribeOrgNotes } from "@/lib/db";
+import { subscribeOrgNotes } from "@/lib/db";
 import { nodeByCode } from "@/lib/industry";
 import { NoteForm } from "@/components/notes/NoteForm";
 import { NoteCard } from "@/components/notes/NoteCard";
@@ -12,7 +12,6 @@ export function NotesTab() {
   const { orgId } = useAuth();
   const [notes, setNotes] = useState<Note[]>([]);
   const [creating, setCreating] = useState(false);
-  const [editing, setEditing] = useState<Note | null>(null);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
@@ -50,10 +49,7 @@ export function NotesTab() {
         />
         <span className="text-xs text-zinc-500">{filtered.length} notes</span>
         <button
-          onClick={() => {
-            setEditing(null);
-            setCreating(true);
-          }}
+          onClick={() => setCreating(true)}
           className="ml-auto rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
         >
           + New note
@@ -61,21 +57,12 @@ export function NotesTab() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
-        {(creating || editing) && (
+        {creating && (
           <div className="mb-4 rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
-            <h3 className="mb-3 text-sm font-semibold">
-              {editing ? "Edit note" : "New note"}
-            </h3>
+            <h3 className="mb-3 text-sm font-semibold">New note</h3>
             <NoteForm
-              note={editing ?? undefined}
-              onDone={() => {
-                setCreating(false);
-                setEditing(null);
-              }}
-              onCancel={() => {
-                setCreating(false);
-                setEditing(null);
-              }}
+              onDone={() => setCreating(false)}
+              onCancel={() => setCreating(false)}
             />
           </div>
         )}
@@ -87,17 +74,7 @@ export function NotesTab() {
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
             {filtered.map((note) => (
-              <NoteCard
-                key={note.id}
-                note={note}
-                onEdit={() => {
-                  setCreating(false);
-                  setEditing(note);
-                }}
-                onDelete={() => {
-                  if (confirm("Delete this note?")) deleteNoteDoc(note.id);
-                }}
-              />
+              <NoteCard key={note.id} note={note} />
             ))}
           </div>
         )}
